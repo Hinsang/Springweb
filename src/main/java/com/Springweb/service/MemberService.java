@@ -1,23 +1,74 @@
 package com.Springweb.service;
 
 import com.Springweb.domain.dto.MemberDto;
+import com.Springweb.domain.dto.OauthDto;
 import com.Springweb.domain.entity.member.MemberEntity;
 import com.Springweb.domain.entity.member.MemberRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.security.crypto.bcrypt.BCrypt;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.oauth2.client.userinfo.DefaultOAuth2UserService;
+import org.springframework.security.oauth2.client.userinfo.OAuth2UserRequest;
+import org.springframework.security.oauth2.client.userinfo.OAuth2UserService;
+import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
+import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.stereotype.Service;
 
 import javax.mail.internet.MimeMessage;
 import javax.servlet.http.HttpServletRequest;
 import javax.transaction.Transactional;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
-import java.util.Random;
+import java.util.*;
 
 @Service
-public class MemberService {
+public class MemberService
+        implements UserDetailsService,
+        OAuth2UserService<OAuth2UserRequest, OAuth2User> {
+    // UserDetailsService : 일반회원 --> loadUserByUsername 메소드 구현
+    // OAuth2UserService : 소셜회원
+
+    @Override // 로그인 성공한 소셜 회원 정보 받는 메소드
+    public OAuth2User loadUser(OAuth2UserRequest userRequest) throws OAuth2AuthenticationException {
+
+        // 1. 인증[로그인] 결과 정보 요청
+        OAuth2UserService oauth2UserService = new DefaultOAuth2UserService();
+        OAuth2User oAuth2User = oauth2UserService.loadUser(userRequest);
+
+
+        // 2. oauth2 클라이언트 식별 [ 카카오 vs 네이버 vs 구글 ]
+        String registrationId = userRequest.getClientRegistration().getRegistrationId();
+
+
+        // 3. 회원정보 담는 객체
+        String oauth2UserInfo = userRequest
+                .getClientRegistration()
+                .getProviderDetails()
+                .getUserInfoEndpoint()
+                .getUserNameAttributeName();
+
+        // 4. Dto 처리
+        OauthDto oauthDto = OauthDto.of( registrationId, oauth2UserInfo, oAuth2User.getAttributes() );
+
+        // *. DB 처리
+            // 권한부여
+            Set<GrantedAuthority> authorities = new HashSet<>();
+            authorities.add(new SimpleGrantedAuthority("kakaoUser"));
+
+        // 5. 반환 MemberDto[ 일반회원 vs oauth : 통합회원 - loginDto ]
+        MemberDto memberDto = new MemberDto();
+            memberDto.setMemail(oauthDto.getMemail());
+            memberDto.getAuthorities();
+            memberDto.setAttributes( oauthDto.getAttributes());
+        return memberDto;
+    }
 
     // ------------------------------- 전역 객체 -------------------------------//
     @Autowired
@@ -44,36 +95,63 @@ public class MemberService {
         return optional.get();
     }
 
-    // 1. 회원가입
+    // 1. [일반] 회원가입
     @Transactional
     public int setmember(MemberDto memberDto ){
+        // 암호화 : 해시함수 사용하는 암호화 기법중 하나 [ BCrypt ]
+        BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
+        memberDto.setMpassword( passwordEncoder.encode( memberDto.getPassword() ) );
         // 1. DAO 처리 [ insert ]
         MemberEntity entity = memberRepository.save( memberDto.toEntity() );
         // memberRepository.save( 엔티티 객체 ) : 해당 엔티티 객체가 insert 생성된 엔티티객체 반환
+        // 회원 등급 넣어주기
+        entity.setMrol("user");
+
         // 2. 결과 반환 [ 생성된 엔티티의 pk값 반환 ]
         return entity.getMno();
     }
-    // 2. 로그인
-    @Transactional
-    public int getmember(MemberDto memberDto ){
-        // 1. Dao 처리 [ select ]
-        // 1. 모든 엔티티=레코드 호출 [ select * from member ]
-        List<MemberEntity> entityList = memberRepository.findAll();
-        // 2. 입력받은 데이터와 일치값 찾기
-        for( MemberEntity entity : entityList ){ // 리스트 반복
-            if( entity.getMemail().equals(memberDto.getMemail())){ // 엔티티=레코드 의 이메일 과 입력받은 이메일
-                if( entity.getMpassword().equals(memberDto.getMpassword())){ // 엔티티=레코드 의 패스워드 와 입력받은 패스워드
-                    // 세션 부여 [ 로그인 성공시 'loginMno'이름으로 회원번호 세션 저장  ]
-                    request.getSession().setAttribute("loginMno" , entity.getMno() );
-                    // 엔티티 = 레코드 = 로그인 성공한객체
-                    return 1;// 로그인 성공했다.
-                }else{
-                    return 2; // 패스워드 틀림 [ 전제조건 : 아이디중복 없다는 전제조건 ]
-                }
-            }
-        }
-        return 0; // 아이디가 틀림
+    // 2. [ 시큐리티 사용시 ] 로그인 인증 메소드 재정의
+    @Override
+    public UserDetails loadUserByUsername(String memail ) throws UsernameNotFoundException {
+        // 1. 입력받은 아이디 [ memail ] 로 엔티티 찾기
+        MemberEntity memberEntity = memberRepository.findByMemail( memail )
+                .orElseThrow( ()-> new UsernameNotFoundException("사용자가 존재하지 않습니다,") ); // .orElseThrow : 검색 결과가 없으면 화살표함수[람다식]를 이용한
+        // 2. 검증된 토큰 생성
+        Set<GrantedAuthority>  authorities = new HashSet<>();
+        authorities.add(
+                new SimpleGrantedAuthority( memberEntity.getMrol() )
+        ); // 토큰정보에 일반회원 내용 넣기
+        // 3.
+        MemberDto memberDto = memberEntity.toDto(); // 엔티티 --> Dto
+        memberDto.setAuthorities( authorities );       // dto --> 토큰 추가
+        return memberDto; // Dto 반환 [ MemberDto는 UserDetails 의 구현체 ]
+        // 구현체 : 해당 인터페이스의 추상메소드[선언만]를 구현해준 클래스의 객체
     }
+
+
+
+    // 2. 로그인 [ 시큐리티 사용시 필요없음 ]
+//    @Transactional
+//    public int getmember(MemberDto memberDto ){
+//        // 1. Dao 처리 [ select ]
+//            // 1. 모든 엔티티=레코드 호출 [ select * from member ]
+//        List<MemberEntity> entityList = memberRepository.findAll();
+//            // 2. 입력받은 데이터와 일치값 찾기
+//        for( MemberEntity entity : entityList ){ // 리스트 반복
+//            if( entity.getMemail().equals(memberDto.getMemail())){ // 엔티티=레코드 의 이메일 과 입력받은 이메일
+//                if( entity.getMpassword().equals(memberDto.getMpassword())){ // 엔티티=레코드 의 패스워드 와 입력받은 패스워드
+//                    // 세션 부여 [ 로그인 성공시 'loginMno'이름으로 회원번호 세션 저장  ]
+//                    request.getSession().setAttribute("loginMno" , entity.getMno() );
+//                                                                // 엔티티 = 레코드 = 로그인 성공한객체
+//                    return 1;// 로그인 성공했다.
+//                }else{
+//                    return 2; // 패스워드 틀림 [ 전제조건 : 아이디중복 없다는 전제조건 ]
+//                }
+//            }
+//        }
+//        return 0; // 아이디가 틀림
+//    }
+
     // 3. 비밀번호찾기
     @Transactional
     public String getpassword( String memail ){
@@ -99,22 +177,17 @@ public class MemberService {
             int mno = (Integer) object; // 형변환 [ object --> int ]
             // 3. 세션에 있는 회원번호[PK] 로 리포지토리 찾기 [ findById : select * from member where mno = ? ]
             Optional< MemberEntity > optional =  memberRepository.findById(mno);
-            System.out.println(optional);
             if( optional.isPresent() ){ // optional객체내 엔티티 존재 여부 판단
                 // Optional 클래스 : null 관련 메소드 제공
                 // 4.Optional객체에서 데이터[엔티티] 빼오기
                 MemberEntity entity = optional.get();
-                if(entity.getMpassword().equals(mpassword)) {
-                    // 5. 탈퇴 [ delete : delete from member where mno = ? ]
-                    memberRepository.delete( entity );
-                    // 6. 세션 [ 세션삭제 = 로그아웃 ]
-                    request.getSession().setAttribute("loginMno" , null);
-                    return 1;
-                }
-                return 0;
+                // 5. 탈퇴 [ delete : delete from member where mno = ? ]
+                memberRepository.delete( entity );
+                // 6. 세션 [ 세션삭제 = 로그아웃 ]
+                request.getSession().setAttribute("loginMno" , null);
+                return 1;
             }
         }
-
         return 0; // [ 만약에 세션이 null 이면 반환 o 혹은 select 실패시   ]
     }
     // 5. 회원 수정
@@ -138,19 +211,34 @@ public class MemberService {
         }
         return 0;
     }
-    // 6. 로그인 여부 판단 메소드
-    public int getloginMno(){
-        // 1. 세션 호출
-        Object object  = request.getSession().getAttribute("loginMno");
-        // 2. 세션 여부 판단
-        if( object != null ){ return (Integer) object; }
-        else{ return 0; }
+    // 6. 로그인 여부 판단 메소드 [ http 세션 ]
+//    public int getloginMno(){
+//        // 1. 세션 호출
+//        Object object  = request.getSession().getAttribute("loginMno");
+//        // 2. 세션 여부 판단
+//        if( object != null ){ return (Integer) object; }
+//        else{ return 0; }
+//    }
+    // 6. 로그인 여부 판단 메소드 [ principal 세션 ]
+    public String getloginMno(){
+        //1. 인증된 토큰 확인      [ SecurityContextHolder 인증된 토큰 보관소 ---> UserDetails(MemberDto) ]
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        //2. 인증된 토큰 내용 확인
+        Object principal = authentication.getPrincipal(); // Principal:접근주체 [ UserDetails(MemberDto) ]
+        System.out.println("토큰 내용확인 : " + principal );
+        // 3. 토큰 내용에 따른 제어
+        if( principal.equals("anonymousUser") ){ // anonymousUser 이면 로그인전
+            return null;
+        }else{ // anonymousUser 아니면 로그인후
+            MemberDto memberDto = (MemberDto) principal;
+            return memberDto.getMemail()+"_"+memberDto.getAuthorities();
+        }
     }
-    // 7. 로그아웃
-    public void logout(){
-        // 기본 세션명의 세션데이터를 null
-        request.getSession().setAttribute("loginMno" , null );
-    }
+//    // 7. 로그아웃 [ http 세션 ]
+//    public void logout(){
+//        // 기본 세션명의 세션데이터를 null
+//        request.getSession().setAttribute("loginMno" , null );
+//    }
 
     // 8. 회원목록 서비스
     public List<MemberDto> list(){
@@ -195,7 +283,6 @@ public class MemberService {
         }catch (Exception e){ System.out.println("메일전송 실패 : "+e); }
 
     }
-
 
 }
 

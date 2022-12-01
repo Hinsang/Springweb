@@ -7,7 +7,7 @@ function getloginMno() {
 
             alert(re)
             let headerbox = '';
-            if( re == "0" ) {
+            if( re == "" ) {
                 headerbox +=
                 `
                     <a href="/member/signup"><button type="button">회원가입</button></a>
@@ -16,7 +16,7 @@ function getloginMno() {
             } else {
                 headerbox +=
                 `
-                    <button type="button" onclick="logout()">로그아웃</button>
+                    <a href="/member/logout"><button type="button">로그아웃</button></a>
                     <a href="/member/findpassword"><button type="button">비밀번호찾기</button></a>
                     <a href="/member/update"><button type="button">비밀번호수정</button></a>
                     <a href="/member/delete"><button type="button">회원탈퇴</button></a>

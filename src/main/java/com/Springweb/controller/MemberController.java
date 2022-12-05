@@ -9,7 +9,8 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
-@CrossOrigin(origins = "http://localhost:3000") // 리액트와 연결하기 위한 리액트 포트번호
+// @CrossOrigin(origins = "http://localhost:3000") // 리액트와 연결하기 위한 리액트 포트번호
+
 @RestController // Restful api 사용하는 @controller + @ResponseBody
 @RequestMapping("/member") // 공통 URL 매핑 주소
 public class MemberController {
@@ -20,6 +21,7 @@ public class MemberController {
     private MemberService memberService; // 서비스 객체 생성
 
     // --------------------------------- HTML 반환 매핑 ---------------------------------- //
+/*
     @GetMapping("/signup")  // 프로젝트내 resource -> templates -> member -> signup.html 반환
     public Resource getsignup(){ return new ClassPathResource("templates/member/signup.html");    }
     @GetMapping("/login")
@@ -34,6 +36,7 @@ public class MemberController {
     public Resource getdelete(){ return new ClassPathResource("templates/member/delete.html");}
     @GetMapping("/update")
     public Resource getupdate(){ return new ClassPathResource("templates/member/update.html");}
+*/
 
     // --------------------------------- 서비스/기능 매핑 ------------------------------------- //
     @PostMapping("/setmember") // 1.회원가입 기능

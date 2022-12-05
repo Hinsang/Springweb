@@ -30,43 +30,49 @@ import java.util.*;
 
 @Service
 public class MemberService
-        implements UserDetailsService,
-        OAuth2UserService<OAuth2UserRequest, OAuth2User> {
+        implements UserDetailsService ,
+        OAuth2UserService< OAuth2UserRequest , OAuth2User> {
     // UserDetailsService : 일반회원 --> loadUserByUsername 메소드 구현
-    // OAuth2UserService : 소셜회원
+    // Auth2UserService< OAuth2UserRequest , OAuth2User>  : 소셜회원 ---> OAuth2User 메소드 구현
+
 
     @Override // 로그인 성공한 소셜 회원 정보 받는 메소드
-    public OAuth2User loadUser(OAuth2UserRequest userRequest) throws OAuth2AuthenticationException {
-
+    public OAuth2User loadUser( OAuth2UserRequest userRequest ) throws OAuth2AuthenticationException {
+        // userRequest 인증 결과 요청변수
         // 1. 인증[로그인] 결과 정보 요청
-        OAuth2UserService oauth2UserService = new DefaultOAuth2UserService();
-        OAuth2User oAuth2User = oauth2UserService.loadUser(userRequest);
-
-
+        OAuth2UserService oAuth2UserService = new DefaultOAuth2UserService();
+        OAuth2User oAuth2User = oAuth2UserService.loadUser( userRequest ); // oAuth2User.getAttributes()
         // 2. oauth2 클라이언트 식별 [ 카카오 vs 네이버 vs 구글 ]
         String registrationId = userRequest.getClientRegistration().getRegistrationId();
-
-
-        // 3. 회원정보 담는 객체
+        // 3. 회원정보 담긴 객체명 [ JSON 형태 ]
         String oauth2UserInfo = userRequest
                 .getClientRegistration()
                 .getProviderDetails()
                 .getUserInfoEndpoint()
                 .getUserNameAttributeName();
-
         // 4. Dto 처리
-        OauthDto oauthDto = OauthDto.of( registrationId, oauth2UserInfo, oAuth2User.getAttributes() );
+        OauthDto oauthDto = OauthDto.of( registrationId , oauth2UserInfo , oAuth2User.getAttributes() );
 
-        // *. DB 처리
-            // 권한부여
-            Set<GrantedAuthority> authorities = new HashSet<>();
-            authorities.add(new SimpleGrantedAuthority("kakaoUser"));
+        // *. Db 처리
+        // 1. 이메일로 엔티티 검색 [ 가입  or 기존회원 구분 ]
+        Optional< MemberEntity > optional
+                = memberRepository.findByMemail( oauthDto.getMemail() );
 
+        MemberEntity memberEntity = null;
+        if( optional.isPresent() ) { // 기존회원이면 // Optional 클래스 [ null 예외처리 방지 ] \
+            memberEntity = optional.get();
+        }else{ // 기존회원이 아니면 [ 가입 ]
+            memberEntity = memberRepository.save( oauthDto.toEntity() );
+        }
+
+        // 권한부여
+        Set<GrantedAuthority> authorities   = new HashSet<>();
+        authorities.add( new SimpleGrantedAuthority( memberEntity.getMrol() ) );
         // 5. 반환 MemberDto[ 일반회원 vs oauth : 통합회원 - loginDto ]
         MemberDto memberDto = new MemberDto();
-            memberDto.setMemail(oauthDto.getMemail());
-            memberDto.getAuthorities();
-            memberDto.setAttributes( oauthDto.getAttributes());
+        memberDto.setMemail( memberEntity.getMemail() );
+        memberDto.setAuthorities( authorities );
+        memberDto.setAttributes( oauthDto.getAttributes() );
         return memberDto;
     }
 
@@ -116,7 +122,8 @@ public class MemberService
         // 1. 입력받은 아이디 [ memail ] 로 엔티티 찾기
         MemberEntity memberEntity = memberRepository.findByMemail( memail )
                 .orElseThrow( ()-> new UsernameNotFoundException("사용자가 존재하지 않습니다,") ); // .orElseThrow : 검색 결과가 없으면 화살표함수[람다식]를 이용한
-        // 2. 검증된 토큰 생성
+
+        // 2. 검증된 토큰 생성 [ 일반회원 ]
         Set<GrantedAuthority>  authorities = new HashSet<>();
         authorities.add(
                 new SimpleGrantedAuthority( memberEntity.getMrol() )
@@ -224,7 +231,7 @@ public class MemberService
         //1. 인증된 토큰 확인      [ SecurityContextHolder 인증된 토큰 보관소 ---> UserDetails(MemberDto) ]
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         //2. 인증된 토큰 내용 확인
-        Object principal = authentication.getPrincipal(); // Principal:접근주체 [ UserDetails(MemberDto) ]
+        Object principal = authentication.getPrincipal(); // Principal:접근주체 [ UserDetails , OAuth2User (MemberDto) ]
         System.out.println("토큰 내용확인 : " + principal );
         // 3. 토큰 내용에 따른 제어
         if( principal.equals("anonymousUser") ){ // anonymousUser 이면 로그인전
@@ -283,6 +290,7 @@ public class MemberService
         }catch (Exception e){ System.out.println("메일전송 실패 : "+e); }
 
     }
+
 
 }
 

@@ -1,5 +1,6 @@
 package com.Springweb.domain.dto;
 
+import com.Springweb.domain.entity.member.MemberEntity;
 import lombok.*;
 
 import java.util.Map;
@@ -23,7 +24,7 @@ public class OauthDto {
     // 1. 카카오 객체 생성 메소드
     public static OauthDto ofKakao( String registrationId , String oauth2UserInfo , Map<String , Object> attributes ){
         // 1. 회원정보 호출
-        Map< String , Object > kakao_account = (Map<String, Object>) attributes.get( oauth2UserInfo );
+        Map< String , Object > kakao_account = (Map<String, Object>) attributes.get( oauth2UserInfo  );
         // kako_account -> email , profile[nickname]
         Map< String , Object > profile = (Map<String, Object>) kakao_account.get("profile"); // profile -> nickname
         return OauthDto.builder()
@@ -61,6 +62,11 @@ public class OauthDto {
     }
 
     // 4. dto --> ToEntity
-
+    public MemberEntity toEntity(  ){
+        return MemberEntity.builder()
+                .memail( this.memail )
+                .mrol( this.registrationId )
+                .build();
+    }
 
 }

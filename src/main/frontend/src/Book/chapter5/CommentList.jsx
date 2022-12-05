@@ -32,7 +32,6 @@ function CommentList( props ){
 export default CommentList
 
 /*
-
     // map vs forEach
         // 리스트명.map( ( 반복변수명 ) => { 실행문 } )
         // 리스트명.forEach( ( 반복변수명 ) => { 실행문 } )
@@ -44,5 +43,5 @@ export default CommentList
 //             <Comment name={ "강호동" } comment={ "저도 리액트 배워보고 싶습니다" } />
 //         </div>
 //     );
-
 */
+

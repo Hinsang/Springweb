@@ -2,6 +2,7 @@ package com.Springweb.service;
 
 import com.Springweb.domain.dto.BcategoryDto;
 import com.Springweb.domain.dto.BoardDto;
+import com.Springweb.domain.dto.PageDto;
 import com.Springweb.domain.entity.bcategory.BcategoryEntity;
 import com.Springweb.domain.entity.bcategory.BcategoryRepository;
 import com.Springweb.domain.entity.board.BoardEntity;
@@ -46,7 +47,7 @@ public class BoardService {
     // private  BoardService boardService; // 불가능
 
     // 첨부파일 경로
-    String path = "C:\\Users\\504t\\Desktop\\springweb\\Ezenweb\\src\\main\\resources\\static\\bupload\\";
+    String path = "C:\\";
 
 
     // @Transactional : 엔티티 DML 적용 할때 사용되는 어노테이션
@@ -112,6 +113,7 @@ public class BoardService {
         System.out.println(boardDto);
         // ---------- 로그인 회원 찾기 메소드 실행 --> 회원엔티티 검색 --------------  //
         MemberEntity memberEntity = memberService.getEntity();
+
         if( memberEntity == null ){
             System.out.println("회원 값이 없다.");
             return false; }
@@ -139,23 +141,16 @@ public class BoardService {
     }
     // 2. 게시물 목록 조회
     @Transactional      // bcno : 카테고리번호 , page : 현재 페이지번호 , key : 검색필드명 , keyword : 검색 데이터
-    public List<BoardDto> boardlist(  int page , int bcno , String key , String keyword  ){
+    public PageDto boardlist( PageDto pageDto ){
         Page<BoardEntity> elist = null; // 1. 페이징처리된 엔티티 리스트 객체 선언
         Pageable pageable = PageRequest.of(  // 2.페이징 설정 [ 페이지시작 : 0 부터 ] , 게시물수 , 정렬
-                page-1 , 3 , Sort.by( Sort.Direction.DESC , "bno")  );
+                pageDto.getPage()-1 , 3 , Sort.by( Sort.Direction.DESC , "bno")  );
         // 3. 검색여부 / 카테고리  판단
-        if( key.equals("btitle") ){ // 검색필드가 제목이면
-            elist = boardRepository.findbybtitle( bcno , keyword , pageable);
-        }else if( key.equals("bcontent") ){ // 검색필드가 제목이면
-            elist = boardRepository.findbybcontent( bcno , keyword , pageable);
-        }else{ // 검색이 없으면 // 카테고리 출력
-            if( bcno == 0  ) elist = boardRepository.findAll( pageable);
-            else elist = boardRepository.findBybcno( bcno , pageable);
-        }
+        elist = boardRepository.findBySearch( pageDto.getBcno() , pageDto.getKey() , pageDto.getKeyword() , pageable);
 
         // 프론트엔드에 표시할 페이징번호버튼 수
         int btncount = 5;                               // 1.페이지에 표시할 총 페이지 버튼 개수
-        int startbtn = (page/btncount) * btncount +1;   // 2. 시작번호 버튼
+        int startbtn = (pageDto.getPage()/btncount) * btncount +1;   // 2. 시작번호 버튼
         int endbtn = startbtn + btncount-1;             // 3. 마지막번호 버튼
         if( endbtn > elist.getTotalPages() ) endbtn =elist.getTotalPages();
 
@@ -164,10 +159,12 @@ public class BoardService {
             dlist.add( entity.toDto() );
         }
 
-        dlist.get(0).setStartbtn( startbtn );
-        dlist.get(0).setEndbtn( endbtn );
+        pageDto.setList(dlist);
+        pageDto.setStartbtn(startbtn);
+        pageDto.setEndbtn(endbtn);
+        pageDto.setTotalBoards(elist.getTotalElements());
 
-        return dlist;  // 4. 변환된 리스트 dist 반환
+        return pageDto;  // 4. 변환된 리스트 dist 반환
     }
     // 3. 게시물 개별 조회
     @Transactional
@@ -199,7 +196,7 @@ public class BoardService {
     }
     // 5. 게시물 수정 [ 첨부파일  1.첨부파일 있을때->첨부파일변경  , 2.첨부파일 없을때 -> 첨부파일 추가 ]
     @Transactional
-    public boolean upboard( BoardDto boardDto){
+    public boolean upboard( BoardDto boardDto ){
         // 1. DTO에서 수정할 PK번호 이용해서 엔티티 찾기
         Optional<BoardEntity> optional = boardRepository.findById( boardDto.getBno() );
         if( optional.isPresent() ){  // 2.
